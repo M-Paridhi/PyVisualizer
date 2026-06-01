@@ -1,0 +1,55 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PyVisualizer — Local Development Stack
+#
+# Services:
+#   backend  — FastAPI API server
+#   frontend — Vite dev server (React + TypeScript)
+#
+# The backend spawns throwaway "pyvisualizer-sandbox" containers via the
+# host Docker socket. The sandbox image must be built separately:
+#   docker build -f sandbox/Dockerfile.sandbox -t pyvisualizer-sandbox:latest .
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ALLOWED_ORIGINS=http://localhost:5173
+      - SANDBOX_IMAGE=pyvisualizer-sandbox:latest
+      - EXECUTION_TIMEOUT=10
+      - MEMORY_LIMIT=64m
+      - CPU_QUOTA=50000
+      - PIDS_LIMIT=32
+    volumes:
+      # Mount Docker socket so backend can spawn sandbox containers on the host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Hot-reload during development
+      - ./backend:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
