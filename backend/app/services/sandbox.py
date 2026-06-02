@@ -20,7 +20,7 @@ EXECUTION_TIMEOUT = int(os.getenv("EXECUTION_TIMEOUT", "10"))  # seconds
 MEMORY_LIMIT = os.getenv("MEMORY_LIMIT", "64m")
 CPU_QUOTA = os.getenv("CPU_QUOTA", "50000")   # 50% of 1 core (100000 = full core)
 PIDS_LIMIT = int(os.getenv("PIDS_LIMIT", "32"))
-
+SHARED_DIR = "/sandbox_files"
 
 class SandboxError(Exception):
     pass
@@ -37,7 +37,8 @@ async def execute_in_sandbox(code: str) -> Dict:
     run_id = uuid.uuid4().hex
 
     # Write code to a temp file that we'll volume-mount into the container
-    with tempfile.TemporaryDirectory(prefix=f"pyvis_{run_id}_") as tmpdir:
+    os.makedirs(SHARED_DIR, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=SHARED_DIR, prefix=f"pyvis_{run_id}_") as tmpdir:
         code_path = os.path.join(tmpdir, "user_code.py")
         with open(code_path, "w") as f:
             f.write(code)
@@ -65,6 +66,7 @@ async def execute_in_sandbox(code: str) -> Dict:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+            print("DOCKER CMD:", " ".join(cmd))
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=EXECUTION_TIMEOUT,
@@ -93,6 +95,12 @@ async def execute_in_sandbox(code: str) -> Dict:
                 f"Sandbox produced invalid JSON: {e}\n"
                 f"stdout: {stdout[:200]}\nstderr: {stderr[:200]}"
             )
+        
+        try:
+            os.remove(code_path)
+            os.rmdir(tmpdir)
+        except Exception:
+            pass
 
         return result
 
